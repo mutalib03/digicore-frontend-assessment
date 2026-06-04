@@ -1,13 +1,13 @@
-import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { Observable, combineLatest } from 'rxjs';
-import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs/operators';
+import { Observable, combineLatest, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, map, startWith, shareReplay, catchError } from 'rxjs/operators';
 import { TransactionService } from './transaction.service';
 
 export interface Transaction {
   id: string; 
-  category: string;
+  category?: string; 
   amount: number;
 }
 
@@ -24,30 +24,33 @@ export interface Transaction {
     </div>
   `
 })
-export class TransactionsComponent implements OnInit {
+export class TransactionsComponent {
   private transactionService = inject(TransactionService);
   
   searchControl = new FormControl('', { nonNullable: true });
-  filteredTransactions$!: Observable<Transaction[]>;
 
-  ngOnInit(): void {
-    const search$ = this.searchControl.valueChanges.pipe(
-      startWith(''),
-      debounceTime(300),
-      distinctUntilChanged(),
-      map(term => term.toLowerCase())
-    );
+  private search$ = this.searchControl.valueChanges.pipe(
+    startWith(''),
+    debounceTime(300),
+    distinctUntilChanged(),
+    map(term => term.toLowerCase())
+  );
 
-    const transactions$: Observable<Transaction[]> = this.transactionService.getTransactions();
+  private transactions$ = this.transactionService.getTransactions().pipe(
+    shareReplay(1),
+    catchError(() => {
+      console.error('Failed to load transactions');
+      return of([]); 
+    })
+  );
 
-    this.filteredTransactions$ = combineLatest([transactions$, search$]).pipe(
-      map(([transactions, searchTerm]) => 
-        transactions.filter(t => t.category.toLowerCase().includes(searchTerm))
-      )
-    );
-  }
+  filteredTransactions$ = combineLatest([this.transactions$, this.search$]).pipe(
+    map(([transactions, searchTerm]) => 
+      transactions.filter(t => (t.category ?? '').toLowerCase().includes(searchTerm))
+    )
+  );
 
-  trackById(index: number, transaction: Transaction): string {
+  trackById(_: number, transaction: Transaction): string {
     return transaction.id;
   }
 }
