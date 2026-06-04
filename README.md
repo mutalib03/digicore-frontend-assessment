@@ -3,11 +3,16 @@
 ## Part A: Broken Banking Transaction UI
 
 ### 1. Issues Identified
-Looking at the provided `TransactionsComponent`, there are several major blockers that would cause performance bottlenecks and bugs in production:
+Reviewing the provided `TransactionsComponent`, I identified several critical issues that would degrade performance and cause bugs in a production environment:
 
-* **The Memory Leak:** Calling `.subscribe()` directly inside `ngOnInit` without a teardown mechanism is a classic memory leak. Every time the component is recreated, a new subscription stacks up in memory.
-* **Change Detection & DOM Thrashing:** Relying on default change detection with an array is expensive. Worse, binding the filter directly to the `(input)` event means it fires synchronously on every keystroke, blocking the UI thread. The missing `trackBy` function also forces Angular to destroy and recreate the entire DOM list on every keystroke.
-* **State, Unsafe Typings, & Missing Error Guards:** The `.includes(value)` filter is case-sensitive and lacks a null guard—if an API returns a transaction missing a category, the app will crash. Furthermore, unhandled HTTP errors would leave the user with a silently broken UI.
+| # | Category | Issue | Impact |
+| :--- | :--- | :--- | :--- |
+| **1** | **Memory Leak** | `.subscribe()` is called without ever unsubscribing. | Every time the component mounts, a new subscription stacks in memory, eventually crashing the app. |
+| **2** | **Change Detection** | Relies on default change detection with array mutations. | The component re-evaluates on every single DOM event, creating heavy CPU load. |
+| **3** | **DOM Performance** | Missing `trackBy` function on `*ngFor`. | Angular is forced to destroy and recreate the entire list in the DOM on every keystroke. |
+| **4** | **Thread Blocking** | Synchronous filtering tied directly to the `(input)` event. | Fires on every single keystroke without debounce, freezing the UI for users typing quickly. |
+| **5** | **State Handling** | The filter uses `.includes(value)` which is case-sensitive. | Poor UX (e.g., searching "food" will not return "Food"). Missing null-guards will also crash the app if a category is undefined. |
+| **6** | **Type Safety** | Uses `event: any` on the input handler and implicit arrays. | Bypasses TypeScript's compile-time safety, leaving the app prone to runtime errors. |
 
 ### 2. The Solution (See `transactions.component.ts`)
 To fix this, I completely removed the manual state mutations and shifted to a fully declarative, reactive approach:
