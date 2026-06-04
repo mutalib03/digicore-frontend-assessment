@@ -3,24 +3,24 @@
 ## Part A: Broken Banking Transaction UI
 
 ### 1. Issues Identified
-Looking at the provided `TransactionsComponent`, there are a few major blockers that would cause performance bottlenecks and bugs in production:
+Looking at the provided `TransactionsComponent`, there are several major blockers that would cause performance bottlenecks and bugs in production:
 
-* **Template Syntax:** The `ngFor` is missing the asterisk (`*ngFor`). As is, this component will throw a compiler error.
-* **The Memory Leak:** Calling `.subscribe()` directly inside `ngOnInit` without a teardown mechanism (like `takeUntilDestroyed` or manual unsubscription) is a classic memory leak. Every time the component is recreated, a new subscription stacks up in memory.
-* **Change Detection & DOM:** Relying on default change detection with an array is expensive. Worse, binding the filter directly to the `(input)` event means it fires synchronously on every keystroke, blocking the UI thread. The missing `trackBy` function also forces Angular to destroy and recreate the entire DOM list on every keystroke.
-* **State & Typings:** The `.includes(value)` filter is case-sensitive, which is bad for UX. Additionally, using `any` for the event and leaving the arrays implicitly typed defeats the purpose of using TypeScript in an enterprise app.
+* **The Memory Leak:** Calling `.subscribe()` directly inside `ngOnInit` without a teardown mechanism is a classic memory leak. Every time the component is recreated, a new subscription stacks up in memory.
+* **Change Detection & DOM Thrashing:** Relying on default change detection with an array is expensive. Worse, binding the filter directly to the `(input)` event means it fires synchronously on every keystroke, blocking the UI thread. The missing `trackBy` function also forces Angular to destroy and recreate the entire DOM list on every keystroke.
+* **State, Unsafe Typings, & Missing Error Guards:** The `.includes(value)` filter is case-sensitive and lacks a null guard—if an API returns a transaction missing a category, the app will crash. Furthermore, unhandled HTTP errors would leave the user with a silently broken UI.
 
 ### 2. The Solution (See `transactions.component.ts`)
-To fix this, I completely removed the manual state mutations and shifted to a declarative, reactive approach:
-* Switched to `ChangeDetectionStrategy.OnPush` to stop unnecessary re-renders.
-* Used a `FormControl` with `debounceTime(300)` so we aren't filtering on every single keystroke.
-* Combined the data stream and search stream using `combineLatest`. 
-* Used the `async` pipe in the template. This delegates the subscription management entirely to Angular, immediately fixing the memory leak.
-* Added a `trackBy` function to optimize list rendering.
+To fix this, I completely removed the manual state mutations and shifted to a fully declarative, reactive approach:
+* **Declarative Initialization:** Removed `ngOnInit` entirely. The streams are built at field initialization for cleaner lifecycles.
+* **Performance Optimizations:** Switched to `ChangeDetectionStrategy.OnPush`. Used `FormControl` with `debounceTime(300)` and `distinctUntilChanged()` to prevent UI thread blocking. Added a `trackBy` function for optimal DOM reuse.
+* **Robust Data Handling:** Combined the streams using `combineLatest`. Applied `shareReplay(1)` to the HTTP call to cache the response and prevent redundant network requests.
+* **Safety Nets:** Added `catchError` to gracefully handle API failures. Added a null guard (`?? ''`) in the filter logic to prevent runtime crashes if transaction categories are undefined.
+* **Subscription Management:** Relied exclusively on the `async` pipe in the template, which delegates teardown entirely to Angular, permanently fixing the memory leak.
 
 ---
 
 ## Part B: Multi-Bank Custom UI Engine
+(Note: Please see the part-b-architecture-snippets.ts file in this repository for a code-level demonstration of the core concepts described below). 
 
 To support 10+ banks from a single codebase without hardcoding tenant logic, the architecture needs to be strictly metadata-driven. Everything should be resolved at runtime based on the bank's context.
 
